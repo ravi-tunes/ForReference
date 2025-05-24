@@ -1,0 +1,11 @@
+high-perf-logging/
+├── src/
+│   └── main/
+│       ├── java/
+│       │   └── com/example/logging/
+│       │       ├── HighPerfLoggingApp.java
+│       │       ├── CustomLogLevels.java
+│       │       └── MessageProcessor.java
+│       └── resources/
+│           └── log4j2.xml
+└── pom.xml
