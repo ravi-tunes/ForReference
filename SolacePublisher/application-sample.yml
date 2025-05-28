@@ -1,0 +1,18 @@
+solace:
+  receiver:
+    host: tcp://receiver-host:55555
+    vpn: receiver-vpn
+    username: user1
+    password: pass1
+
+  sender1:
+    host: tcp://sender1-host:55555
+    vpn: sender1-vpn
+    username: user2
+    password: pass2
+
+  sender2:
+    host: tcp://sender2-host:55555
+    vpn: sender2-vpn
+    username: user3
+    password: pass3
