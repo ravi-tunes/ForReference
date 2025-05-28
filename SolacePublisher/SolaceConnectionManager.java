@@ -2,24 +2,18 @@ import com.solacesystems.jcsmp.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.Properties;
-
+/**
+ * Manages the connection to Solace using JCSMP with retry and configuration support.
+ */
 public class SolaceConnectionManager {
 
     private static final Logger logger = LogManager.getLogger(SolaceConnectionManager.class);
 
-    private final String host;
-    private final String vpn;
-    private final String username;
-    private final String password;
-
+    private final SolaceConfigProperties config;
     private volatile JCSMPSession session;
 
-    public SolaceConnectionManager(Properties config) {
-        this.host = config.getProperty("solace.host");
-        this.vpn = config.getProperty("solace.vpn");
-        this.username = config.getProperty("solace.username");
-        this.password = config.getProperty("solace.password");
+    public SolaceConnectionManager(SolaceConfigProperties config) {
+        this.config = config;
     }
 
     public synchronized JCSMPSession getSession() throws JCSMPException {
@@ -28,10 +22,10 @@ public class SolaceConnectionManager {
         }
 
         JCSMPProperties properties = new JCSMPProperties();
-        properties.setProperty(JCSMPProperties.HOST, host);
-        properties.setProperty(JCSMPProperties.VPN_NAME, vpn);
-        properties.setProperty(JCSMPProperties.USERNAME, username);
-        properties.setProperty(JCSMPProperties.PASSWORD, password);
+        properties.setProperty(JCSMPProperties.HOST, config.getHost());
+        properties.setProperty(JCSMPProperties.VPN_NAME, config.getVpn());
+        properties.setProperty(JCSMPProperties.USERNAME, config.getUsername());
+        properties.setProperty(JCSMPProperties.PASSWORD, config.getPassword());
         properties.setProperty(JCSMPProperties.REAPPLY_SUBSCRIPTIONS, true);
         properties.setProperty(JCSMPProperties.CLIENT_NAME, "BookPublisherClient");
 
@@ -59,6 +53,6 @@ public class SolaceConnectionManager {
             }
         }
 
-        throw new IllegalStateException("Should not reach here");
+        throw new IllegalStateException("Unreachable code - retry logic should handle termination.");
     }
 }
