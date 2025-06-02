@@ -1,0 +1,65 @@
+application.yml ──▶ BookCacheProperties
+                     ▲
+                     │
+    ┌────────────┬──────────────────────────────┐
+    │            │                              │
+AllBooksLoader  HistoricalBooksLoader   NoPreloadBookLoader (only one active)
+                     │
+             BookLookupService  ◀── BookRepository
+                     ▲
+             Used in message processors / handlers
+
+
+
+
+1. Spring Boot: “I need to create beans”
+
+When your Spring Boot app starts, it:
+        1.      Scans the classpath for components (classes annotated with @Component, @Service, @ConfigurationProperties, etc.)
+        2.      Looks for a @SpringBootApplication class and starts building the application context (aka the Spring IoC container)
+
+2. Configuration is loaded first
+Spring Boot loads application.yml 
+
+It binds this into your @ConfigurationProperties class: BookCacheProperties
+
+
+3. Spring scans for components
+
+Spring continues scanning your classes:
+        •       Finds all classes annotated with @Component
+        •       Tries to create beans from them
+Spring: “Should I create this bean?”
+        •       If enabled=true and history=-1, it creates AllBooksLoader
+        •       If enabled=true and history > 0, it creates HistoricalBooksLoader
+        •       If enabled=false, it creates NoPreloadBookLoader
+
+Only one strategy bean is created based on config.
+
+4. Spring: “Who needs this strategy?”
+
+Then Spring sees:
+It sees that BookLookupService needs:
+        •       A BookLoadStrategy (only one exists, thanks to @ConditionalOn...)
+        •       A BookRepository (assume it’s already declared as a Spring bean)
+
+Spring injects both into the constructor and creates a fully wired BookLookupService.
+
+. Ready to use at runtime
+
+Now BookLookupService is a singleton Spring bean. It has:
+        •       A cache initialized from the selected strategy
+        •       A fallback logic to DB via BookRepository        
+
+
+
+
+
+
+
+
+
+
+
+
+

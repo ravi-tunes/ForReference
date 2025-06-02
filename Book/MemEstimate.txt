@@ -1,0 +1,64 @@
+Assume:
+	•	200,000 entries
+	•	Book object: 2 long + 1 int + 2 references to 25-char Strings
+	•	JVM uses 64-bit architecture with compressed OOPs enabled
+
+⸻
+
+ 1. Long2ObjectOpenHashMap<Book> idToBook
+	•	Stores primitive long keys and references to Book objects
+	•	Each entry:
+	•	long key: 8 bytes
+	•	Reference to Book: 8 bytes
+	•	Hash structure overhead: ~8–16 bytes
+	•	Total per entry: ~24–32 bytes
+
+Book object:
+	•	Header: ~16 bytes
+	•	2 long + 1 int + 3 references (to Strings): ~48–56 bytes
+	•	Strings (25 chars each):
+	•	Each string: ~24 bytes object + ~50 bytes for char array = ~74 bytes
+	•	2 strings: ~148 bytes
+
+Total per Book (with Strings): ~200–220 bytes
+
+Total map + book size:
+200,000 × (32 + 220) = ~50 MB
+
+
+
+2. Object2LongOpenHashMap<String> codeToId
+	•	Stores String keys (25 chars) → long values
+
+Each entry:
+	•	String key (25 chars): ~25 * 2 = 50 + object header and refs ≈ 80–90 bytes
+	•	Primitive long value: 8 bytes
+	•	Entry overhead: ~24–32 bytes
+
+Total per entry: ~120 bytes
+
+Total: 200,000 × 120 = ~24 MB
+
+Object2LongOpenHashMap<String> accountToId
+
+Same estimate as codeToId:
+
+Total: ~24 MB
+
+Long2LongOpenHashMap parentIdToId
+	•	Both key and value are primitive long
+
+Per entry:
+	•	8 bytes (key) + 8 bytes (value) + ~8–16 bytes overhead = ~24–32 bytes
+
+Total:200,000 × 32 = ~6.4 MB
+
+
+Total Estimated Memory Usage
+Component
+Approx Memory
+idToBook ~50 MB
+codeToId ~24 MB
+accountToId ~24 MB
+parentIdToId ~6.4 MB
+Total ~104–110 MB

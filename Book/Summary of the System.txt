@@ -1,0 +1,20 @@
+Summary of the System
+The provided code implements a configurable book caching system that pre-loads books into an in-memory cache during application startup based on configuration properties. The system uses a strategy pattern to determine which books to load:
+
+All books (when history = -1)
+
+Recent books (when history > 0)
+
+No pre-loading (when pre-caching is disabled)
+
+Key components:
+
+BookLoadStrategy: Interface for loading strategies.
+
+AllBooksLoader/HistoricalBooksLoader/NoPreloadBookLoader: Concrete strategies.
+
+BookLookupService: Uses a strategy to populate a cache (Long2ObjectOpenHashMap) at startup and falls back to DB on cache misses.
+
+BookRepository: Data access layer using JdbcTemplate.
+
+BookCacheProperties: Binds configuration properties (book-cache.pre-caching).
