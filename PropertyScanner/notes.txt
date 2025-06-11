@@ -34,3 +34,11 @@ mvn com.example:spring-bean-scanner-maven-plugin:1.0-SNAPSHOT:scan \
         <appender-ref ref="STDOUT" />
     </root>
 </configuration>
+
+
+mvn install
+mvn com.example:spring-bean-scanner-maven-plugin:scan \
+  -DmodulesRoot=./project-root \
+  -DpropsRoot=./configs \
+  -Dregion=us-east/dev \
+  -DoutputFile=./reports/scan-results.csv

@@ -3,19 +3,24 @@ package com.example;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Represents a single Spring bean and all of its property-placeholder usages.
+ */
 public class BeanReport {
-    private String beanId;
-    private String className;
-    private List<PropertyReport> properties;
+    private final String beanId;
+    private final String className;
+    private final List<PropertyReport> properties = new ArrayList<>();
 
     public BeanReport(String beanId, String className) {
         this.beanId = beanId;
         this.className = className;
-        this.properties = new ArrayList<>();
     }
 
-    public void addProperty(String propertyName, String placeholderKey, String finalValue) {
-        properties.add(new PropertyReport(propertyName, placeholderKey, finalValue));
+    /**
+     * Add a property-placeholder usage to this bean’s report.
+     */
+    public void addProperty(PropertyReport prop) {
+        properties.add(prop);
     }
 
     public String getBeanId() {
