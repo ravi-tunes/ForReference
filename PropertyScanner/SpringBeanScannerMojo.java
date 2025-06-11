@@ -1,34 +1,24 @@
 package com.example;
 
+import com.opencsv.CSVWriter;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import javax.xml.XMLConstants;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamReader;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * Maven Mojo to scan Spring XML beans, resolve property placeholders via a layered .properties hierarchy,
- * and produce a CSV report.
- */
 @Mojo(name = "scan")
 public class SpringBeanScannerMojo extends AbstractMojo {
 
@@ -41,124 +31,125 @@ public class SpringBeanScannerMojo extends AbstractMojo {
     @Parameter(property = "region")
     private String region;
 
+    @Parameter(property = "environment")
+    private String environment;
+
     @Parameter(property = "outputFile", defaultValue = "${project.build.directory}/bean-report.csv")
     private File outputFile;
 
-    // Pattern to extract keys inside ${...}
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
 
     @Override
     public void execute() throws MojoExecutionException {
         try {
+            validateInputs();
+            getLog().info("Starting Spring Bean Scanner");
             getLog().info("Modules root: " + modulesRoot.getAbsolutePath());
             getLog().info("Properties root: " + propsRoot.getAbsolutePath());
-            if (region != null) {
-                getLog().info("Region: " + region);
-            }
+            if (region != null) getLog().info("Region: " + region);
+            if (environment != null) getLog().info("Environment: " + environment);
 
-            // 1. Find all Spring XMLs under **/resources/spring/
-            List<Path> xmlFiles = scanXmlFiles(modulesRoot.toPath());
-            getLog().info("Found " + xmlFiles.size() + " XML files.");
+            // 1. Find XML configuration files
+            List<Path> xmlFiles = findSpringConfigFiles(modulesRoot.toPath());
+            getLog().info("Found " + xmlFiles.size() + " Spring XML files");
 
-            // 2. Load .properties hierarchy
-            List<PropertySource> sources = loadPropertySources(propsRoot.toPath(), region);
+            // 2. Load property sources
+            List<PropertySource> sources = loadPropertyHierarchy(propsRoot.toPath(), region, environment);
             List<String> sourceNames = sources.stream()
-                    .map(PropertySource::getName)
-                    .collect(Collectors.toList());
-            getLog().info("Loaded property sources: " + sourceNames);
+                .map(PropertySource::getName)
+                .collect(Collectors.toList());
+            getLog().info("Loaded " + sources.size() + " property sources");
 
-            // 3. Parse beans and collect reports
-            List<BeanReport> beanReports = new ArrayList<>();
-            DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+            // 3. Parse XMLs and extract bean reports
+            List<BeanReport> beanReports = parseBeanDefinitions(xmlFiles, sources);
+            getLog().info("Found " + beanReports.size() + " beans with placeholders");
 
-            for (Path xml : xmlFiles) {
-                getLog().info("Parsing " + xml);
-                Document doc = db.parse(xml.toFile());
-                NodeList beans = doc.getDocumentElement().getElementsByTagName("bean");
-                for (int i = 0; i < beans.getLength(); i++) {
-                    Element bean = (Element) beans.item(i);
-                    String beanId = bean.getAttribute("id");
-                    if (beanId.isEmpty()) {
-                        beanId = bean.getAttribute("name");
-                    }
-                    String className = bean.getAttribute("class");
-                    BeanReport report = new BeanReport(beanId, className);
-
-                    NodeList props = bean.getElementsByTagName("property");
-                    for (int j = 0; j < props.getLength(); j++) {
-                        Element p = (Element) props.item(j);
-                        String propName = p.getAttribute("name");
-                        String value = p.getAttribute("value");
-                        if (value != null) {
-                            Matcher m = PLACEHOLDER_PATTERN.matcher(value);
-                            while (m.find()) {
-                                String key = m.group(1);
-                                // Build a map of each source -> its value for this key
-                                Map<String,String> map = new LinkedHashMap<>();
-                                for (PropertySource src : sources) {
-                                    map.put(src.getName(), src.getProperties().getProperty(key));
-                                }
-                                // Create and attach property report
-                                PropertyReport pr = new PropertyReport(propName, key, map);
-                                report.addProperty(pr);
-                            }
-                        }
-                    }
-                    if (!report.getProperties().isEmpty()) {
-                        beanReports.add(report);
-                    }
-                }
-            }
-
-            // 4. Write CSV
-            writeCsv(beanReports, sourceNames, outputFile);
-            getLog().info("Report written to " + outputFile.getAbsolutePath());
+            // 4. Generate CSV report
+            generateCsvReport(beanReports, sourceNames, outputFile);
+            getLog().info("Report generated: " + outputFile.getAbsolutePath());
 
         } catch (Exception e) {
-            throw new MojoExecutionException("Scan failed", e);
+            throw new MojoExecutionException("Scan failed: " + e.getMessage(), e);
         }
     }
 
-    private List<Path> scanXmlFiles(Path root) throws IOException {
-        try (Stream<Path> s = Files.find(root, Integer.MAX_VALUE,
-                (path, attrs) -> path.toString().endsWith(".xml") &&
-                        path.toString().contains("/resources/spring/"))) {
-            return s.filter(p -> p.toString().endsWith(".xml")
-                    && p.toString().contains(File.separator + "resources" + File.separator + "spring" + File.separator))
-                    .collect(Collectors.toList());
+    private void validateInputs() throws MojoExecutionException {
+        if (!modulesRoot.exists() || !modulesRoot.isDirectory()) {
+            throw new MojoExecutionException("Invalid modulesRoot: " + modulesRoot.getAbsolutePath());
+        }
+        if (!propsRoot.exists() || !propsRoot.isDirectory()) {
+            throw new MojoExecutionException("Invalid propsRoot: " + propsRoot.getAbsolutePath());
         }
     }
 
-    private List<PropertySource> loadPropertySources(Path propsRoot, String region) throws IOException {
-        List<PropertySource> list = new ArrayList<>();
-        // Global default
-        Path global = propsRoot.resolve("app.default.properties");
-        if (Files.exists(global)) {
-            list.add(new PropertySource("app.default", load(propsRoot.resolve("app.default.properties"))));
+    private List<Path> findSpringConfigFiles(Path root) throws IOException {
+        try (Stream<Path> paths = Files.walk(root)) {
+            return paths
+                .filter(Files::isRegularFile)
+                .filter(this::isSpringConfigFile)
+                .collect(Collectors.toList());
         }
-        // Regional defaults
-        if (region != null && !region.isEmpty()) {
-            Path cum = propsRoot;
+    }
+
+    private boolean isSpringConfigFile(Path file) {
+        if (!file.getFileName().toString().endsWith(".xml")) return false;
+        
+        Path parent = file.getParent();
+        if (parent == null) return false;
+        if (!"spring".equals(parent.getFileName().toString())) return false;
+        
+        Path grandParent = parent.getParent();
+        if (grandParent == null) return false;
+        return "resources".equals(grandParent.getFileName().toString());
+    }
+
+    private List<PropertySource> loadPropertyHierarchy(Path propsRoot, String region, String env) throws IOException {
+        List<PropertySource> sources = new ArrayList<>();
+        
+        // Load root properties
+        loadPropertiesFromDir(propsRoot, sources);
+        
+        // Load region properties if specified
+        if (region != null) {
+            Path regionPath = propsRoot;
             for (String part : region.split("[/\\\\]")) {
-                cum = cum.resolve(part);
-                Path regDef = cum.resolve("applied.default.properties");
-                if (Files.exists(regDef)) {
-                    list.add(new PropertySource(part + "/applied.default", load(regDef)));
-                }
+                regionPath = regionPath.resolve(part);
+                loadPropertiesFromDir(regionPath, sources);
             }
-            // Leaf overrides
-            try (DirectoryStream<Path> ds = Files.newDirectoryStream(cum, "*.properties")) {
-                for (Path p : ds) {
-                    if (!p.getFileName().toString().equals("applied.default.properties")) {
-                        list.add(new PropertySource(cum.getFileName() + "/" + p.getFileName(), load(p)));
-                    }
-                }
+            
+            // Load environment properties if specified
+            if (env != null) {
+                Path envPath = regionPath.resolve(env);
+                loadPropertiesFromDir(envPath, sources);
             }
         }
-        return list;
+        
+        return sources;
     }
 
-    private Properties load(Path path) throws IOException {
+    private void loadPropertiesFromDir(Path dir, List<PropertySource> sources) throws IOException {
+        if (!Files.isDirectory(dir)) return;
+        
+        try (Stream<Path> files = Files.list(dir)) {
+            files.filter(Files::isRegularFile)
+                 .filter(p -> p.toString().endsWith(".properties"))
+                 .sorted()
+                 .forEach(p -> {
+                     try {
+                         String relativePath = propsRoot.toAbsolutePath()
+                             .relativize(p.toAbsolutePath())
+                             .toString();
+                         Properties props = loadProperties(p);
+                         sources.add(new PropertySource(relativePath, props));
+                         getLog().debug("Loaded properties: " + relativePath);
+                     } catch (IOException e) {
+                         getLog().warn("Failed to load properties: " + p + " - " + e.getMessage());
+                     }
+                 });
+        }
+    }
+
+    private Properties loadProperties(Path path) throws IOException {
         Properties props = new Properties();
         try (InputStream in = Files.newInputStream(path)) {
             props.load(in);
@@ -166,51 +157,154 @@ public class SpringBeanScannerMojo extends AbstractMojo {
         return props;
     }
 
-    private void writeCsv(List<BeanReport> beans,
-                          List<String> sources,
-                          File out) throws IOException {
-        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(Files.newOutputStream(out.toPath()), StandardCharsets.UTF_8))) {
-            // Header
-            List<String> hdr = new ArrayList<>(Arrays.asList("beanId","className","propertyName","placeholder"));
-            hdr.addAll(sources);
-            hdr.addAll(Arrays.asList("finalValue","satisfiedIn"));
-            pw.println(toCsv(hdr));
+    private List<BeanReport> parseBeanDefinitions(List<Path> xmlFiles, List<PropertySource> sources) {
+        List<BeanReport> reports = new ArrayList<>();
+        XMLInputFactory factory = createSecureXmlFactory();
+        
+        for (Path xml : xmlFiles) {
+            try {
+                parseXmlFile(xml, factory, sources, reports);
+            } catch (Exception e) {
+                getLog().warn("Skipping invalid XML: " + xml + " - " + e.getMessage());
+            }
+        }
+        return reports;
+    }
 
-            // Rows
-            for (BeanReport br : beans) {
-                for (PropertyReport pr : br.getProperties()) {
-                    List<String> cols = new ArrayList<>();
-                    cols.add(br.getBeanId());
-                    cols.add(br.getClassName());
-                    cols.add(pr.getPropertyName());
-                    cols.add(pr.getPlaceholderKey());
-                    for (String src : sources) {
-                        String v = pr.getValuesPerSource().get(src);
-                        cols.add(v == null ? "" : v);
+    private XMLInputFactory createSecureXmlFactory() {
+        XMLInputFactory factory = XMLInputFactory.newInstance();
+        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        return factory;
+    }
+
+    private void parseXmlFile(Path xml, XMLInputFactory factory, 
+                             List<PropertySource> sources, List<BeanReport> reports) 
+        throws Exception {
+        
+        try (InputStream in = Files.newInputStream(xml)) {
+            XMLStreamReader reader = factory.createXMLStreamReader(in);
+            BeanReport currentBean = null;
+            
+            while (reader.hasNext()) {
+                int event = reader.next();
+                switch (event) {
+                    case XMLStreamConstants.START_ELEMENT:
+                        String tag = reader.getLocalName();
+                        if ("bean".equals(tag)) {
+                            currentBean = createBeanReport(reader);
+                        } else if (currentBean != null && "property".equals(tag)) {
+                            processProperty(reader, currentBean, sources);
+                        }
+                        break;
+                        
+                    case XMLStreamConstants.END_ELEMENT:
+                        if ("bean".equals(reader.getLocalName()) && currentBean != null) {
+                            if (!currentBean.getProperties().isEmpty()) {
+                                reports.add(currentBean);
+                            }
+                            currentBean = null;
+                        }
+                        break;
+                }
+            }
+            reader.close();
+        }
+    }
+
+    private BeanReport createBeanReport(XMLStreamReader reader) {
+        String id = getAttribute(reader, "id");
+        if (id == null || id.isEmpty()) {
+            id = getAttribute(reader, "name");
+        }
+        String className = getAttribute(reader, "class");
+        return new BeanReport(id, className);
+    }
+
+    private void processProperty(XMLStreamReader reader, BeanReport bean, 
+                                List<PropertySource> sources) {
+        String propName = getAttribute(reader, "name");
+        String value = getAttribute(reader, "value");
+        
+        if (propName == null || value == null) return;
+        
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(value);
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            Map<String, String> sourceValues = new LinkedHashMap<>();
+            
+            for (PropertySource source : sources) {
+                sourceValues.put(source.getName(), 
+                    source.getProperties().getProperty(key));
+            }
+            
+            bean.addProperty(new PropertyReport(propName, key, sourceValues));
+        }
+    }
+
+    private String getAttribute(XMLStreamReader reader, String name) {
+        for (int i = 0; i < reader.getAttributeCount(); i++) {
+            if (name.equals(reader.getAttributeLocalName(i))) {
+                return reader.getAttributeValue(i);
+            }
+        }
+        return null;
+    }
+
+    private void generateCsvReport(List<BeanReport> beans, List<String> sources, 
+                                  File output) throws IOException {
+        // Create parent directories if needed
+        if (!output.getParentFile().exists()) {
+            output.getParentFile().mkdirs();
+        }
+        
+        try (CSVWriter writer = new CSVWriter(
+            new OutputStreamWriter(new FileOutputStream(output), StandardCharsets.UTF_8))) {
+            
+            // Create header
+            List<String> headers = new ArrayList<>();
+            headers.add("beanId");
+            headers.add("className");
+            headers.add("propertyName");
+            headers.add("placeholderKey");
+            headers.addAll(sources);
+            headers.add("finalValue");
+            headers.add("satisfiedIn");
+            writer.writeNext(headers.toArray(new String[0]));
+            
+            // Write data rows
+            for (BeanReport bean : beans) {
+                for (PropertyReport prop : bean.getProperties()) {
+                    List<String> row = new ArrayList<>();
+                    row.add(bean.getBeanId());
+                    row.add(bean.getClassName());
+                    row.add(prop.getPropertyName());
+                    row.add(prop.getPlaceholderKey());
+                    
+                    // Add values from each source
+                    for (String source : sources) {
+                        String value = prop.getValuesPerSource().get(source);
+                        row.add(value != null ? value : "");
                     }
-                    cols.add(pr.getFinalValue() == null ? "" : pr.getFinalValue());
-                    cols.add(pr.getSatisfiedIn());
-                    pw.println(toCsv(cols));
+                    
+                    row.add(prop.getFinalValue() != null ? prop.getFinalValue() : "");
+                    row.add(prop.getSatisfiedIn());
+                    writer.writeNext(row.toArray(new String[0]));
                 }
             }
         }
     }
 
-    private String toCsv(List<String> cols) {
-        return cols.stream()
-                .map(s -> "\"" + s.replace("\"", "\"\"") + "\"")
-                .collect(Collectors.joining(","));
-    }
-
-    /** Simple container for a named Properties layer. */
     private static class PropertySource {
         private final String name;
-        private final Properties props;
-        PropertySource(String name, Properties props) {
+        private final Properties properties;
+        
+        PropertySource(String name, Properties properties) {
             this.name = name;
-            this.props = props;
+            this.properties = properties;
         }
+        
         String getName() { return name; }
-        Properties getProperties() { return props; }
+        Properties getProperties() { return properties; }
     }
 }
