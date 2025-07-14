@@ -1,0 +1,55 @@
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.CompletableFuture;
+
+@Component("cacheWarmUp") // Give it a specific name
+public class CacheHealthIndicator implements HealthIndicator {
+
+    private final DatabaseCacheLoader cacheLoader;
+
+    public CacheHealthIndicator(DatabaseCacheLoader cacheLoader) {
+        this.cacheLoader = cacheLoader;
+    }
+
+    @Override
+    public Health health() {
+        CompletableFuture<Void> future = cacheLoader.getLoadingFuture();
+
+        if (future == null) {
+            return Health.down().withDetail("reason", "Cache loader not initialized yet.").build();
+        }
+
+        if (!future.isDone()) {
+            // The task is still running. Report as OUT_OF_SERVICE.
+            // This is perfect for readiness probes in Kubernetes.
+            return Health.outOfService().withDetail("reason", "Cache is warming up.").build();
+        }
+
+        if (future.isCompletedExceptionally()) {
+            // The task failed. Report as DOWN. This is a permanent failure state.
+            return Health.down().withDetail("reason", "Cache loading failed.").build();
+        }
+
+        // The task is done and was successful.
+        return Health.up().withDetail("status", "Cache is fully loaded.").build();
+    }
+}
+
+
+# Expose the health endpoint over the web
+management.endpoints.web.exposure.include=health
+
+# Show details for the health check. Set to 'when-authorized' in production for security.
+management.endpoint.health.show-details=always
+
+# Enable dedicated readiness and liveness probes, which is best practice for Kubernetes/Cloud
+management.health.readinessstate.enabled=true
+management.health.livenessstate.enabled=true
