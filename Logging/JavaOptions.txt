@@ -1,2 +1,0 @@
--Dlog4j2.contextSelector=org.apache.logging.log4j.core.async.AsyncLoggerContextSelector
--Dlog4j2.messageFactory=org.apache.logging.log4j.message.ReusableMessageFactory

@@ -1,5 +1,0 @@
-# application.yml
-kerberos:
-  principal: your-principal@REALM
-  keytab-location: file:/secure/path/to/service.keytab
-  krb5-conf: file:/etc/krb5.conf
