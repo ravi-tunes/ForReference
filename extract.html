@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Extractor</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background-color: #f4f7f9;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h1 {
+            border-bottom: 2px solid #eef;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 8px;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .hidden {
+            display: none;
+        }
+        #result-area {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        #result-area h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 8px;
+        }
+        #extracted-phrase {
+            font-family: monospace;
+            font-size: 1.1rem;
+            word-wrap: break-word;
+            background: #fff;
+            padding: 1rem;
+            border-radius: 4px;
+            line-height: 1.6;
+        }
+        #error-message {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Word Extractor</h1>
+
+        <div id="setup-section">
+            <div class="input-group">
+                <label for="table-data">1. Paste 26x3 Table Data</label>
+                <textarea id="table-data" placeholder="Paste the 78 words here. They can be separated by tabs, spaces, or newlines..."></textarea>
+            </div>
+            <div class="input-group">
+                <label for="key-input">2. Enter 12-Character Key</label>
+                <input type="text" id="key-input" maxlength="12" placeholder="Enter 12 letters (a-z)...">
+            </div>
+            <div>
+                <button id="extract-btn">Extract Words</button>
+            </div>
+            <div id="error-message" class="hidden"></div>
+        </div>
+
+        <div id="result-area" class="hidden">
+            <h2>Extracted 12-Word Phrase</h2>
+            <div id="extracted-phrase"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const errorDisplay = document.getElementById('error-message');
+            const tableDataInput = document.getElementById('table-data');
+            const keyInput = document.getElementById('key-input');
+            const extractBtn = document.getElementById('extract-btn');
+            const resultArea = document.getElementById('result-area');
+            const extractedPhraseDisplay = document.getElementById('extracted-phrase');
+
+            // --- State ---
+            let state = {
+                key: '',
+                tableWords: []
+            };
+
+            // --- Functions ---
+            const showError = (message) => {
+                errorDisplay.textContent = message;
+                errorDisplay.classList.remove('hidden');
+                resultArea.classList.add('hidden');
+            };
+
+            const hideError = () => {
+                errorDisplay.classList.add('hidden');
+            };
+
+            const parseAndValidateInputs = () => {
+                // 1. Parse and validate table data
+                // Use /\s+/ to split on any whitespace (spaces, tabs, newlines)
+                const words = tableDataInput.value.trim().split(/\s+/);
+                if (words.length !== 78) {
+                    showError(`Validation Error: Expected 78 words for the table, but found ${words.length}.`);
+                    return false;
+                }
+                state.tableWords = words;
+
+                // 2. Parse and validate key
+                const key = keyInput.value.trim().toLowerCase();
+                if (key.length !== 12) {
+                    showError(`Validation Error: The key must be exactly 12 characters long. Yours is ${key.length}.`);
+                    return false;
+                }
+                if (!/^[a-z]+$/.test(key)) {
+                    showError('Validation Error: The key must only contain letters (a-z).');
+                    return false;
+                }
+                state.key = key;
+
+                hideError();
+                return true;
+            };
+
+            const performExtraction = () => {
+                // Create the 26x3 grid from the flat list of words
+                const grid = [];
+                for (let i = 0; i < 26; i++) {
+                    grid.push(state.tableWords.slice(i * 3, i * 3 + 3));
+                }
+                
+                // Extract the words based on the key
+                const extractedWords = [];
+                for (let i = 0; i < 12; i++) {
+                    const char = state.key[i];
+                    const rowIndex = char.charCodeAt(0) - 97; // 'a' -> 0, 'b' -> 1, etc.
+                    const colIndex = i % 3;
+                    
+                    const word = grid[rowIndex][colIndex];
+                    extractedWords.push(word);
+                }
+
+                // Display the result
+                extractedPhraseDisplay.textContent = extractedWords.join(' ');
+                resultArea.classList.remove('hidden');
+            };
+
+            // --- Event Listeners ---
+            extractBtn.addEventListener('click', () => {
+                if (!parseAndValidateInputs()) {
+                    return;
+                }
+                performExtraction();
+            });
+        });
+    </script>
+
+</body>
+</html>
