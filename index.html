@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Table Replacer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background-color: #f4f7f9;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: #fff;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            border-bottom: 2px solid #eef;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .setup-section, .main-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+        @media (min-width: 900px) {
+            .main-section {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .hidden {
+            display: none;
+        }
+        .display-area {
+            margin-top: 2rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            min-width: 80px;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .ref-col {
+            background-color: #e9ecef;
+            font-weight: bold;
+            text-align: center;
+            user-select: none;
+        }
+        .highlight-green {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .highlight-red {
+            background-color: #f8d7da !important;
+            color: #721c24;
+        }
+        .key-display span {
+            display: inline-block;
+            padding: 4px;
+            margin: 5px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        #replaced-words-list, #replacement-words-display {
+            list-style-type: decimal;
+            padding-left: 20px;
+            margin: 0;
+        }
+        #error-message {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Interactive Table Replacer</h1>
+
+        <div id="setup-section" class="setup-section">
+            <div class="input-group">
+                <label for="table-data">1. Paste 26x3 Table Data (from Excel, tab-separated)</label>
+                <textarea id="table-data" placeholder="Paste your 26 rows and 3 columns of data here..."></textarea>
+            </div>
+            <div class="input-group">
+                <label for="key-input">2. Enter 12-Character Key</label>
+                <input type="text" id="key-input" maxlength="12" placeholder="Enter 12 characters...">
+            </div>
+            <div class="input-group">
+                <label for="replacement-words">3. Paste 12 Replacement Words (one per line)</label>
+                <textarea id="replacement-words" placeholder="Paste 12 words, each on a new line..."></textarea>
+            </div>
+            <div>
+                <button id="start-btn">Start</button>
+            </div>
+            <div id="error-message" class="hidden"></div>
+        </div>
+
+        <div id="main-section" class="main-section hidden">
+            <div class="controls-area">
+                <h2>Controls &amp; Reference</h2>
+                <div class="input-group">
+                    <label>Key:</label>
+                    <div id="key-display" class="key-display"></div>
+                </div>
+                <div class="input-group">
+                    <label>Replacement Words:</label>
+                    <ol id="replacement-words-display"></ol>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <button id="next-btn" disabled>Next</button>
+                </div>
+                 <div class="input-group">
+                    <label>Replaced Words:</label>
+                    <ol id="replaced-words-list"></ol>
+                </div>
+            </div>
+            <div class="display-area">
+                <h2>Table</h2>
+                <div id="table-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const setupSection = document.getElementById('setup-section');
+            const mainSection = document.getElementById('main-section');
+            const errorDisplay = document.getElementById('error-message');
+
+            const tableDataInput = document.getElementById('table-data');
+            const keyInput = document.getElementById('key-input');
+            const replacementWordsInput = document.getElementById('replacement-words');
+            
+            const startBtn = document.getElementById('start-btn');
+            const nextBtn = document.getElementById('next-btn');
+
+            const keyDisplay = document.getElementById('key-display');
+            const replacementWordsDisplay = document.getElementById('replacement-words-display');
+            const replacedWordsList = document.getElementById('replaced-words-list');
+            const tableContainer = document.getElementById('table-container');
+
+            // --- State ---
+            let state = {
+                currentStep: 0,
+                key: '',
+                replacementWords: [],
+                tableData: []
+            };
+
+            // --- Functions ---
+            const showError = (message) => {
+                errorDisplay.textContent = message;
+                errorDisplay.classList.remove('hidden');
+            };
+
+            const hideError = () => {
+                errorDisplay.classList.add('hidden');
+            };
+
+            const parseAndValidateInputs = () => {
+                // 1. Parse and validate table data
+                const tableRows = tableDataInput.value.trim().split('\n');
+                if (tableRows.length !== 26) {
+                    showError(`Validation Error: Expected 26 rows of table data, but got ${tableRows.length}.`);
+                    return false;
+                }
+                state.tableData = tableRows.map(row => row.split('\t'));
+                const invalidRow = state.tableData.find(row => row.length !== 3);
+                if (invalidRow) {
+                    showError(`Validation Error: All table rows must have 3 columns (tab-separated). Found a row with ${invalidRow.length} columns.`);
+                    return false;
+                }
+
+                // 2. Parse and validate key
+                state.key = keyInput.value.trim();
+                if (state.key.length !== 12) {
+                    showError(`Validation Error: The key must be exactly 12 characters long. Yours is ${state.key.length}.`);
+                    return false;
+                }
+
+                // 3. Parse and validate replacement words
+                state.replacementWords = replacementWordsInput.value.trim().split('\n').filter(w => w.trim() !== '');
+                if (state.replacementWords.length !== 12) {
+                    showError(`Validation Error: Expected 12 replacement words (one per line), but got ${state.replacementWords.length}.`);
+                    return false;
+                }
+
+                hideError();
+                return true;
+            };
+
+            const renderDisplays = () => {
+                // Render Key
+                keyDisplay.innerHTML = '';
+                state.key.split('').forEach(char => {
+                    const span = document.createElement('span');
+                    span.textContent = char;
+                    keyDisplay.appendChild(span);
+                });
+
+                // Render Replacement Words
+                replacementWordsDisplay.innerHTML = '';
+                state.replacementWords.forEach(word => {
+                    const li = document.createElement('li');
+                    li.textContent = word;
+                    replacementWordsDisplay.appendChild(li);
+                });
+
+                // Render Table
+                const table = document.createElement('table');
+                const thead = table.createTHead();
+                const headerRow = thead.insertRow();
+                ['Ref', 'Col 1', 'Col 2', 'Col 3'].forEach((text, index) => {
+                    const th = document.createElement('th');
+                    th.textContent = text;
+                    if (index === 0) {
+                        th.className = 'ref-col';
+                    }
+                    headerRow.appendChild(th);
+                });
+
+                const tbody = table.createTBody();
+                for (let i = 0; i < 26; i++) {
+                    const row = tbody.insertRow();
+                    const refCell = row.insertCell();
+                    refCell.textContent = String.fromCharCode(65 + i);
+                    refCell.className = 'ref-col';
+
+                    for (let j = 0; j < 3; j++) {
+                        const cell = row.insertCell();
+                        cell.textContent = state.tableData[i][j] || '';
+                    }
+                }
+                tableContainer.innerHTML = '';
+                tableContainer.appendChild(table);
+            };
+
+            const clearHighlights = () => {
+                document.querySelectorAll('.highlight-green, .highlight-red').forEach(el => {
+                    el.classList.remove('highlight-green', 'highlight-red');
+                });
+            };
+
+            const previewStep = (step) => {
+                if (step >= 12) return;
+                clearHighlights();
+
+                const keyChar = state.key[step].toUpperCase();
+                const rowIndex = keyChar.charCodeAt(0) - 65;
+                const colIndex = step % 3;
+
+                if (rowIndex < 0 || rowIndex >= 26) {
+                    showError(`Error: The character '${state.key[step]}' in your key is not a valid letter (A-Z).`);
+                    nextBtn.disabled = true;
+                    return;
+                }
+
+                // Highlight key character
+                keyDisplay.children[step].classList.add('highlight-green');
+
+                // Highlight replacement word
+                replacementWordsDisplay.children[step].classList.add('highlight-green');
+
+                // Highlight target table cell
+                const table = tableContainer.querySelector('table');
+                const targetRow = table.tBodies[0].rows[rowIndex];
+                const targetCell = targetRow.cells[colIndex + 1]; // +1 to skip ref col
+                targetCell.classList.add('highlight-red');
+            };
+
+            const executeStep = (step) => {
+                if (step >= 12) return;
+
+                const keyChar = state.key[step].toUpperCase();
+                const rowIndex = keyChar.charCodeAt(0) - 65;
+                const colIndex = step % 3;
+                const replacementWord = state.replacementWords[step];
+
+                // Update table cell
+                const table = tableContainer.querySelector('table');
+                const targetCell = table.tBodies[0].rows[rowIndex].cells[colIndex + 1];
+                const replacedWord = targetCell.textContent;
+                targetCell.textContent = replacementWord;
+
+                // Add to replaced words list
+                const li = document.createElement('li');
+                li.textContent = replacedWord;
+                replacedWordsList.appendChild(li);
+            };
+
+            // --- Event Listeners ---
+            startBtn.addEventListener('click', () => {
+                if (!parseAndValidateInputs()) {
+                    return;
+                }
+
+                state.currentStep = 0;
+                replacedWordsList.innerHTML = '';
+                
+                setupSection.classList.add('hidden');
+                mainSection.classList.remove('hidden');
+                
+                renderDisplays();
+                previewStep(state.currentStep);
+                nextBtn.disabled = false;
+            });
+
+            nextBtn.addEventListener('click', () => {
+                if (state.currentStep >= 12) return;
+
+                executeStep(state.currentStep);
+                
+                state.currentStep++;
+                
+                if (state.currentStep < 12) {
+                    previewStep(state.currentStep);
+                } else {
+                    clearHighlights();
+                    nextBtn.disabled = true;
+                    const p = document.createElement('p');
+                    p.textContent = 'All steps completed!';
+                    p.style.fontWeight = 'bold';
+                    nextBtn.parentElement.appendChild(p);
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>
