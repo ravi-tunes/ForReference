@@ -1,0 +1,28 @@
+# application.yml
+kerberos:
+  kdc: your-kdc-server.com
+  realm: YOUR-REALM.COM
+  refresh-buffer-ms: 3600000  # 1 hour
+  max-retries: 3
+  retry-delay-ms: 10000
+  health-check-timeout-ms: 5000
+
+solace:
+  host: tcps://solace-broker:55443
+  vpn-name: default
+  connection-timeout-ms: 10000
+  max-reconnect-retries: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+logging:
+  level:
+    com.yourcompany: DEBUG
